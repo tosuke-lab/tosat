@@ -1,0 +1,19 @@
+# Solver
+;;
+Error: Unbound constructor Solver
+# Solver.dpll
+;;
+Error: Unbound module Solver
+# dpll;;
+Error: Unbound value dpll
+# #utop_help
+;;
+# Tosat__Solver.dpll;;
+- : int list list -> Tosat.Solver.result = <fun>
+# let c = [[1;2]; [3]; [4;5]; [-2]];;
+val c : int list list = [[1; 2]; [3]; [4; 5]; [-2]]
+# Tosat__Solver.dpll c;;
+Exception: Failure "clauses are all satisfied".
+# #utop_save
+;;
+Directive `utop_save' expects a `string' literal, got no argument.
