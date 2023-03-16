@@ -11,7 +11,7 @@
 
 (maintainers "Maintainer Name")
 
-(license LICENSE)
+(license MIT)
 
 (documentation https://url/to/documentation)
 
@@ -19,8 +19,14 @@
  (name tosat)
  (synopsis "A short synopsis")
  (description "A longer description")
- (depends ocaml dune)
+ (depends
+  dune
+  ocaml
+  (alcotest :with-test)
+  (ocamlformat :with-dev-setup)
+  (ocaml-lsp-server :with-dev-setup)
+  (utop :with-dev-setup))
  (tags
-  (topics "to describe" your project)))
+  (sat-solver dpll)))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project

@@ -4,14 +4,18 @@ synopsis: "A short synopsis"
 description: "A longer description"
 maintainer: ["Maintainer Name"]
 authors: ["Author Name"]
-license: "LICENSE"
-tags: ["topics" "to describe" "your" "project"]
+license: "MIT"
+tags: ["sat-solver" "dpll"]
 homepage: "https://github.com/username/reponame"
 doc: "https://url/to/documentation"
 bug-reports: "https://github.com/username/reponame/issues"
 depends: [
-  "ocaml"
   "dune" {>= "3.7"}
+  "ocaml"
+  "alcotest" {with-test}
+  "ocamlformat" {with-dev-setup}
+  "ocaml-lsp-server" {with-dev-setup}
+  "utop" {with-dev-setup}
   "odoc" {with-doc}
 ]
 build: [
