@@ -22,7 +22,6 @@ let dpll clauses =
         match clauses with
         | [] -> SAT []
         | _ -> begin
-            print_string (string_of_cnf clauses); print_newline ();
             let unit_clause = clauses |> List.find_opt (function [_] -> true | _ -> false) in
             match unit_clause with
             | Some [lit] -> begin
