@@ -1,2 +1,3 @@
-(test
- (name tosat))
+(tests
+ (names test_dpll)
+ (libraries tosat alcotest))
