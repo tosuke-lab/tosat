@@ -1,12 +1,4 @@
-type clause = int list (* literal: x_i -> i, ¬x_i -> -i *)
-type cnf = clause list
-
-let string_of_clause clause =
-    let inner = List.map string_of_int clause |> String.concat " " in
-    "{" ^ inner ^ "}"
-let string_of_cnf cnf = List.map string_of_clause cnf |> String.concat ", "
-
-type result = SAT of int list | UNSAT
+open Cnf
 
 module LitSet = Set.Make (struct
     type t = int
@@ -57,5 +49,5 @@ let dpll clauses =
             | [] -> propagate acc lit clauses
             | _ -> propagate (clause'::acc) lit clauses
     in
-    solve clauses
+    clauses |> List.map (fun (Clause lits) -> lits) |> solve
             
