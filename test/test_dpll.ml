@@ -1,4 +1,4 @@
-open Tosat
+open Sat
 
 let dpll_case name level cnf expected =
   let open Alcotest in
