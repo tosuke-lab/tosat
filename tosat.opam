@@ -12,6 +12,7 @@ bug-reports: "https://github.com/username/reponame/issues"
 depends: [
   "dune" {>= "3.7"}
   "ocaml"
+  "menhir"
   "alcotest" {with-test}
   "ocamlformat" {with-dev-setup}
   "ocaml-lsp-server" {with-dev-setup}

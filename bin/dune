@@ -1,4 +1,4 @@
 (executable
  (public_name tosat)
  (name main)
- (libraries sat))
+ (libraries sat dimacs))

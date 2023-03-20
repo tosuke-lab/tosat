@@ -15,6 +15,8 @@
 
 (documentation https://url/to/documentation)
 
+(using menhir 2.1)
+
 (package
  (name tosat)
  (synopsis "A short synopsis")
@@ -22,6 +24,7 @@
  (depends
   dune
   ocaml
+  menhir
   (alcotest :with-test)
   (ocamlformat :with-dev-setup)
   (ocaml-lsp-server :with-dev-setup)
