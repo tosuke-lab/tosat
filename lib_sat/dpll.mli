@@ -1,1 +1,1 @@
-val solve : int list list -> Cnf.result
+val solve : Cnf.t -> Cnf.result
