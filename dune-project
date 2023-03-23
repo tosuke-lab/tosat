@@ -25,6 +25,7 @@
   dune
   ocaml
   menhir
+  minisat
   (alcotest :with-test)
   (ocamlformat :with-dev-setup)
   (ocaml-lsp-server :with-dev-setup)
