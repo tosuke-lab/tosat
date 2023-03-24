@@ -13,6 +13,7 @@ let intnum = '-'? non_zero digit*
 
 rule token = parse
     | eof       { EOF }
+    | "%"       { EOF }
     | space     { token lexbuf } (* skip spaces *)
     | "c"       { comment lexbuf } (* skip comments *)
     | "p"       { P }
