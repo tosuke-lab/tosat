@@ -27,6 +27,7 @@
   menhir
   minisat
   (alcotest :with-test)
+  (fpath :with-test)
   (ocamlformat :with-dev-setup)
   (ocaml-lsp-server :with-dev-setup)
   (utop :with-dev-setup))

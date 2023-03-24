@@ -1,3 +1,7 @@
 (tests
  (names test_sat)
- (libraries sat alcotest))
+ (libraries
+  sat
+  dimacs
+  alcotest
+  fpath))

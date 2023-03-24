@@ -18,10 +18,10 @@ let sat_case solve name level cnf =
           let actual = Cnf.assign_is_valid cnf assign in
           Alcotest.(check bool) name expected actual)
 
-let cases solve =
+let simple_cases solve =
   let sat_case = sat_case solve in
   [
-    sat_case "SAT" `Quick
+    sat_case "simple-SAT" `Quick
       [
         [ -1; -2 ];
         [ -1; 3 ];
@@ -37,6 +37,41 @@ let cases solve =
       ];
   ]
 
+let find_project_dir () =
+  let cwd = Sys.getcwd () |> Fpath.v in
+  let rec loop dir =
+    let project = Fpath.(dir / "dune-project") in
+    if Sys.file_exists (Fpath.to_string project) then dir
+    else loop @@ Fpath.parent dir
+  in
+  loop cwd
+
+let file_cases =
+  let project_dir = find_project_dir () in
+  let cases_dir = Fpath.(project_dir / "test" / "test_cases") in
+  let cases =
+    Sys.readdir (Fpath.to_string cases_dir)
+    |> Array.to_seq
+    |> Seq.map (fun f -> Fpath.(cases_dir / f))
+    |> Seq.filter (Fpath.has_ext "cnf")
+    |> Seq.map (fun p ->
+           let name = p |> Fpath.rem_ext |> Fpath.basename in
+           In_channel.with_open_text (Fpath.to_string p) (fun chan ->
+               let lex = Lexing.from_channel chan in
+               let cnf = Dimacs.parse lex in
+               match cnf with
+               | Error _ ->
+                   let msg = Printf.sprintf "%s: parse error" name in
+                   Alcotest.fail msg
+               | Ok cnf -> (name, cnf)))
+    |> List.of_seq
+  in
+  fun solve ->
+    cases |> List.map (fun (name, cnf) -> sat_case solve name `Slow cnf)
+
+let dpll_test = ("DPLL", simple_cases Dpll.solve)
+let dpll2_test = ("DPLL2", simple_cases Dpll2.solve @ file_cases Dpll2.solve)
+
 let () =
   let open Alcotest in
-  run "Sat" [ ("DPLL", cases Dpll.solve); ("DPLL2", cases Dpll2.solve) ]
+  run "Sat" [ dpll_test; dpll2_test ]
