@@ -46,6 +46,8 @@ let find_project_dir () =
   in
   loop cwd
 
+let ( let@ ) x k = x k
+
 let file_cases =
   let project_dir = find_project_dir () in
   let cases_dir = Fpath.(project_dir / "test" / "test_cases") in
@@ -56,14 +58,14 @@ let file_cases =
     |> Seq.filter (Fpath.has_ext "cnf")
     |> Seq.map (fun p ->
            let name = p |> Fpath.rem_ext |> Fpath.basename in
-           In_channel.with_open_text (Fpath.to_string p) (fun chan ->
-               let lex = Lexing.from_channel chan in
-               let cnf = Dimacs.parse lex in
-               match cnf with
-               | Error _ ->
-                   let msg = Printf.sprintf "%s: parse error" name in
-                   Alcotest.fail msg
-               | Ok cnf -> (name, cnf)))
+           let@ chan = In_channel.with_open_text (Fpath.to_string p) in
+           let lex = Lexing.from_channel chan in
+           let cnf = Dimacs.parse lex in
+           match cnf with
+           | Error _ ->
+               let msg = Printf.sprintf "%s: parse error" name in
+               Alcotest.fail msg
+           | Ok cnf -> (name, cnf))
     |> List.of_seq
   in
   fun solve ->
