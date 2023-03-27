@@ -24,7 +24,7 @@ let unassigned assign score =
     if v = 0 then acc
     else if value assign v = Unknown then
       let score_v = score v in
-      if score_v > max_score then aux (Some v) score_v (v - 1)
+      if score_v >= max_score then aux (Some v) score_v (v - 1)
       else aux acc max_score (v - 1)
     else aux acc max_score (v - 1)
   in

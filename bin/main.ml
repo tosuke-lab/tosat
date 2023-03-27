@@ -1,6 +1,6 @@
 let minisat_solver = Sat.Minisat_solver.solve
 let dpll_solver = Sat.Dpll.solve
-let dpll2_solver = Sat.Dpll2.solve
+let dpll2_solver = Sat.Dpll2.solve ~debug:false
 
 type backend = MINISAT | DPLL | DPLL2
 

@@ -48,7 +48,7 @@ let find_project_dir () =
 
 let ( let@ ) x k = x k
 
-let file_cases =
+let[@warning "-32"] file_cases =
   let project_dir = find_project_dir () in
   let cases_dir = Fpath.(project_dir / "test" / "test_cases") in
   let cases =
@@ -72,7 +72,11 @@ let file_cases =
     cases |> List.map (fun (name, cnf) -> sat_case solve name `Slow cnf)
 
 let dpll_test = ("DPLL", simple_cases Dpll.solve)
-let dpll2_test = ("DPLL2", simple_cases Dpll2.solve @ file_cases Dpll2.solve)
+
+let dpll2_test =
+  let solve = Dpll2.solve ~debug:true in
+  let file_cases = file_cases solve in
+  ("DPLL2", simple_cases solve @ file_cases)
 
 let () =
   let open Alcotest in

@@ -1,1 +1,1 @@
-val solve : Cnf.t -> Cnf.result
+val solve : ?debug:bool -> Cnf.t -> Cnf.result
