@@ -4,36 +4,137 @@ module Clauses : sig
   type t
   type propagate_result = Sat | Conflict | Continue
 
-  val create : unit -> t
+  val create : int -> t
   val add_clause : t -> Lit.t array -> unit
   val propagate : t -> Assign.t -> propagate_result
 end = struct
-  type clause = Lit.t array
+  (* w1 * w2 * literal array *)
+  type clause = int * int * Lit.t array
   type t = clause array ref
   type propagate_result = Sat | Conflict | Continue
-  type clause_type = CSat | CUnit of Lit.t | CMore | CConflict
+  type clause_type = CSat | CConflict | CUnit of int | CMore of int * int
 
-  let create () = ref [||]
-  let add_clause clauses clause = clauses := Array.append !clauses [| clause |]
+  let create _ = ref [||]
+
+  let add_clause clauses literals =
+    let literals = Array.map Fun.id literals in
+    Array.sort compare literals;
+    let clause = (0, 0, literals) in
+    clauses := Array.append !clauses [| clause |]
 
   let propagate clauses assign =
     let clause_step i =
-      let clause = !clauses.(i) in
-      let len = Array.length clause in
-      let rec loop count unassigned j =
-        if j = len then
-          match count with 0 -> CConflict | 1 -> CUnit unassigned | _ -> CMore
-        else
-          let l = clause.(j) in
-          match Assign.xor assign l with
-          (* unassigned *)
-          | Assign.Unknown -> loop (count + 1) l (j + 1)
-          (* negated *)
-          | Assign.True -> loop count unassigned (j + 1)
-          (* satisfied *)
-          | Assign.False -> CSat
+      let w1, w2, lits = !clauses.(i) in
+      let update_clause w1 w2 =
+        let w1, w2 = if w1 < w2 then (w1, w2) else (w2, w1) in
+        !clauses.(i) <- (w1, w2, lits)
       in
-      loop 0 Lit.nil 0
+      let watch _ = () in
+      let watch_unbound () = () in
+      let find_ua found start =
+        let len = Array.length lits in
+        let rec loop found j =
+          if j = start then
+            match found with Some j -> CUnit j | None -> CConflict
+          else if j = len then loop found 0
+          else
+            match Assign.xor assign lits.(j) with
+            (* unassigned *)
+            | Assign.Unknown -> (
+                match found with
+                | Some j' when j = j' -> loop found (j + 1)
+                | Some k -> CMore (j, k)
+                | None -> loop (Some j) (j + 1))
+            (* positive *)
+            | Assign.False -> CSat
+            (* negative *)
+            | Assign.True -> loop found (j + 1)
+        in
+        loop found (start + 1)
+      in
+      if w1 = w2 then
+        let ty =
+          match Assign.xor assign lits.(w1) with
+          | Assign.Unknown -> find_ua (Some w1) w1
+          | Assign.False -> CSat
+          | Assign.True -> find_ua None w1
+        in
+        let () =
+          match ty with
+          | CSat | CConflict | CUnit _ -> watch_unbound ()
+          | CMore (w1', w2') ->
+              watch w1';
+              watch w2';
+              update_clause w1' w2'
+        in
+        ty
+      else
+        let wl1, wl2 = (lits.(w1), lits.(w2)) in
+        match (Assign.xor assign wl1, Assign.xor assign wl2) with
+        | Assign.Unknown, Assign.Unknown ->
+            watch w1;
+            watch w2;
+            CMore (w1, w2)
+        | Assign.False, _ | _, Assign.False ->
+            watch w1;
+            watch w2;
+            CSat
+        (* w1: unassgined *)
+        | Assign.Unknown, Assign.True -> (
+            match find_ua (Some w1) w2 with
+            | CSat ->
+                watch w1;
+                watch w2;
+                CSat
+            | CUnit w1' as ty ->
+                assert (w1 = w1');
+                watch w1;
+                watch w2;
+                ty
+            | CMore (w1', w2') as ty ->
+                assert (w1 = w1' || w1 = w2');
+                watch w1;
+                let w2 = if w2' = w2 then w1' else w2' in
+                watch w2;
+                update_clause w1 w2;
+                ty
+            | _ -> failwith "invalid")
+        (* w2: unassgined *)
+        | Assign.True, Assign.Unknown -> (
+            match find_ua (Some w2) w2 with
+            | CSat ->
+                watch w1;
+                watch w2;
+                CSat
+            | CUnit w2' as ty ->
+                assert (w2 = w2');
+                watch w1;
+                watch w2;
+                ty
+            | CMore (w1', w2') as ty ->
+                assert (w2 = w1' || w2 = w2');
+                watch w2;
+                let w1 = if w1' = w1 then w2' else w1' in
+                watch w1;
+                update_clause w1 w2;
+                ty
+            | _ -> failwith "invalid")
+        | Assign.True, Assign.True -> (
+            match find_ua None w2 with
+            | (CSat | CConflict) as ty ->
+                watch w1;
+                watch w2;
+                ty
+            | CUnit w as ty ->
+                watch w;
+                watch w1;
+                update_clause w w1;
+                ty
+            | CMore (w1', w2') as ty ->
+                watch w1';
+                watch w2';
+                update_clause w1' w2';
+                ty)
     in
     let len = Array.length !clauses in
     let rec aux has_na new_assign i =
@@ -45,9 +146,11 @@ end = struct
       else
         match clause_step i with
         | CSat -> aux has_na new_assign (i + 1)
-        | CMore -> aux true new_assign (i + 1)
+        | CMore _ -> aux true new_assign (i + 1)
         | CConflict -> Conflict
-        | CUnit l ->
+        | CUnit j ->
+            let _, _, clause_lits = !clauses.(i) in
+            let l = clause_lits.(j) in
             Assign.assign assign l;
             aux has_na true (i + 1)
     in
@@ -62,7 +165,7 @@ let solve cnf =
       0 cnf
   in
   let clauses =
-    let cl = Clauses.create () in
+    let cl = Clauses.create nvars in
     List.iter
       (fun c ->
         let clause = Array.of_list (List.map Lit.make c) in
