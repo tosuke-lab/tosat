@@ -20,16 +20,15 @@ let xor (_, a) lit =
 let level (level, _) = !level lsr 2
 
 let unassigned assign score =
-  let nvars = nvars assign in
   let rec aux acc max_score v =
-    if v > nvars then acc
+    if v = 0 then acc
     else if value assign v = Unknown then
       let score_v = score v in
-      if score_v > max_score then aux (Some v) score_v (v + 1)
-      else aux acc max_score (v + 1)
-    else aux acc max_score (v + 1)
+      if score_v > max_score then aux (Some v) score_v (v - 1)
+      else aux acc max_score (v - 1)
+    else aux acc max_score (v - 1)
   in
-  aux None Int.min_int 1
+  aux None Int.min_int (nvars assign)
 
 let to_list assign =
   let nvars = nvars assign in
