@@ -2,18 +2,20 @@ let minisat_solver = Sat.Minisat_solver.solve
 let dpll_solver = Sat.Dpll.solve
 let dpll2_solver = Sat.Dpll2.solve ~debug:false ~watched_literal:true
 
-type backend = MINISAT | DPLL | DPLL2
+type backend = MINISAT | DPLL | DPLL2 | DPLL2minusWL
 
 let parse_backend = function
   | "minisat" -> MINISAT
   | "dpll" -> DPLL
   | "dpll2" -> DPLL2
+  | "dpll2-wl" -> DPLL2minusWL
   | _ -> failwith "unknown backend"
 
 let solver = function
   | MINISAT -> minisat_solver
   | DPLL -> dpll_solver
   | DPLL2 -> dpll2_solver
+  | DPLL2minusWL -> Sat.Dpll2.solve ~debug:false ~watched_literal:false
 
 let print_result = function
   | Sat.Cnf.SAT assign ->
