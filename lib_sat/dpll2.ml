@@ -37,41 +37,26 @@ end = struct
     clause_array := Array.append !clause_array [| clause |];
     watch_clause clauses 0 i
 
-  let clause_step clauses assign i cause =
+  let clause_step clauses assign i cause_var =
     let clauses_array, _ = clauses in
     let w1, w2, lits = !clauses_array.(i) in
-    let update_clause w1 w2 =
-      assert (w1 <> w2);
-      let w1, w2 = if w1 < w2 then (w1, w2) else (w2, w1) in
-      !clauses_array.(i) <- (w1, w2, lits)
-    in
-    let watch w =
-      let v = Lit.var @@ lits.(w) in
-      assert (v <> 0);
-      watch_clause clauses v i
+    assert ((w2 = 0 && w1 = w2) || w1 < w2);
+    let update_watched_literals w1' w2' =
+      assert (w1' <> w2');
+      let w1', w2' = if w1' < w2' then (w1', w2') else (w2', w1') in
+      let first_update = w1 = w2 in
+      if (w1 = w1' || w1 = w2') && cause_var = Lit.var @@ lits.(w1) then
+        watch_clause clauses cause_var i;
+      if (w2 = w1' || w2 = w2') && cause_var = Lit.var @@ lits.(w2) then
+        watch_clause clauses cause_var i;
+      if first_update || (w1' <> w1 && w1' <> w2) then
+        watch_clause clauses (Lit.var @@ lits.(w1')) i;
+      if first_update || (w2' <> w1 && w2' <> w2) then
+        watch_clause clauses (Lit.var @@ lits.(w2')) i;
+      !clauses_array.(i) <- (w1', w2', lits)
     in
     let watch_unbound () = watch_clause clauses 0 i in
-    let check_type found_ua start =
-      let len = Array.length lits in
-      let rec loop found j =
-        if j = start then
-          match found with Some j -> CUnit j | None -> CConflict
-        else if j = len then loop found 0
-        else
-          match Assign.xor assign lits.(j) with
-          (* unassigned *)
-          | Assign.Unknown -> (
-              match found with
-              | Some j' when j = j' -> loop found (j + 1)
-              | Some k -> CMore (j, k)
-              | None -> loop (Some j) (j + 1))
-          (* positive *)
-          | Assign.False -> CSat j
-          (* negative *)
-          | Assign.True -> loop found (j + 1)
-      in
-      loop found_ua (start + 1)
-    in
+
     if w1 = w2 then
       let uas, ty =
         let len = Array.length lits in
@@ -101,88 +86,75 @@ end = struct
         | CConflict, _ -> watch_unbound ()
         | CUnit _, _ -> watch_unbound ()
         | CSat _, [] -> watch_unbound ()
-        | CSat w1, w2 :: _ ->
-            watch w1;
-            watch w2;
-            update_clause w1 w2
-        | CMore (w1, w2), _ ->
-            watch w1;
-            watch w2;
-            update_clause w1 w2
+        | CSat w1', w2' :: _ -> update_watched_literals w1' w2'
+        | CMore (w1', w2'), _ -> update_watched_literals w1' w2'
       in
       ty
     else
-      let wl1, wl2 = (lits.(w1), lits.(w2)) in
-      let watch_with_cause () =
-        if cause = Lit.var wl1 then watch w1
-        else if cause = Lit.var wl2 then watch w2
-        else ()
+      let check_type found_ua start =
+        let len = Array.length lits in
+        let rec loop found j =
+          if j = start then
+            match found with Some j -> CUnit j | None -> CConflict
+          else if j = len then loop found 0
+          else
+            match Assign.xor assign lits.(j) with
+            (* unassigned *)
+            | Assign.Unknown -> (
+                match found with
+                | Some j' when j = j' -> loop found (j + 1)
+                | Some k -> CMore (j, k)
+                | None -> loop (Some j) (j + 1))
+            (* positive *)
+            | Assign.False -> CSat j
+            (* negative *)
+            | Assign.True -> loop found (j + 1)
+        in
+        loop found_ua (start + 1)
       in
-      match (Assign.xor assign wl1, Assign.xor assign wl2) with
-      | Assign.Unknown, Assign.Unknown ->
-          watch_with_cause ();
-          CMore (w1, w2)
-      | Assign.False, _ ->
-          watch_with_cause ();
-          CSat w1
-      | _, Assign.False ->
-          watch_with_cause ();
-          CSat w2
-      (* w1: unassgined *)
-      | Assign.Unknown, Assign.True -> (
-          match check_type (Some w1) w2 with
-          | CSat w as ty ->
-              assert (w <> w1);
-              (* w2 -> w *)
-              watch w;
-              update_clause w1 w;
-              ty
-          | CUnit w1' as ty ->
-              assert (w1 = w1');
-              watch w2;
-              ty
-          | CMore (w1', w2') as ty ->
-              assert (w1 = w1' || w1 = w2');
-              let w1, w2 = if w1 = w1' then (w1, w2') else (w1, w1') in
-              watch w2;
-              update_clause w1 w2;
-              ty
-          | CConflict -> failwith "w1: cannot conflict")
-      (* w2: unassgined *)
-      | Assign.True, Assign.Unknown -> (
-          match check_type (Some w2) w2 with
-          | CSat w as ty ->
-              assert (w <> w2);
-              (* w1 -> w *)
-              watch w;
-              update_clause w w2;
-              ty
-          | CUnit w2' as ty ->
-              assert (w2 = w2');
-              watch w1;
-              ty
-          | CMore (w1', w2') as ty ->
-              assert (w2 = w1' || w2 = w2');
-              let w1, w2 = if w2 = w2' then (w1', w2) else (w2', w2) in
-              watch w1;
-              update_clause w1 w2;
-              ty
-          | CConflict -> failwith "w2: cannot conflict")
-      | Assign.True, Assign.True -> (
-          match check_type None w2 with
-          | (CSat _ | CConflict) as ty ->
-              watch_with_cause ();
-              ty
-          | CUnit w as ty ->
-              watch w;
-              let w' = if cause = Lit.var wl1 then w2 else w1 in
-              update_clause w w';
-              ty
-          | CMore (w1', w2') as ty ->
-              watch w1';
-              watch w2';
-              update_clause w1' w2';
-              ty)
+      let wl1, wl2 = (lits.(w1), lits.(w2)) in
+      let w1', w2', ty =
+        let comp1, comp2 = (Assign.xor assign wl1, Assign.xor assign wl2) in
+        match (comp1, comp2) with
+        | Assign.Unknown, Assign.Unknown -> (w1, w2, CMore (w1, w2))
+        | Assign.False, _ -> (w1, w2, CSat w1)
+        | _, Assign.False -> (w1, w2, CSat w2)
+        (* w1: unassgined *)
+        | Assign.Unknown, Assign.True -> (
+            match check_type (Some w1) w2 with
+            | CSat w2' as ty ->
+                assert (w2' <> w1);
+                (w1, w2', ty)
+            | CUnit w1' as ty ->
+                assert (w1 = w1');
+                (w1, w2, ty)
+            | CMore (w1', w2') as ty ->
+                assert (w1 = w1' || w1 = w2');
+                (w1', w2', ty)
+            | CConflict -> failwith "w1: cannot conflict")
+        (* w2: unassgined *)
+        | Assign.True, Assign.Unknown -> (
+            match check_type (Some w2) w2 with
+            | CSat w1' as ty ->
+                assert (w1' <> w2);
+                (w1', w2, ty)
+            | CUnit w2' as ty ->
+                assert (w2 = w2');
+                (w1, w2, ty)
+            | CMore (w1', w2') as ty ->
+                assert (w2 = w1' || w2 = w2');
+                (w1', w2', ty)
+            | CConflict -> failwith "w2: cannot conflict")
+        | Assign.True, Assign.True -> (
+            match check_type None w2 with
+            | (CSat _ | CConflict) as ty -> (w1, w2, ty)
+            | CUnit w as ty ->
+                let w' = if cause_var = Lit.var wl1 then w2 else w1 in
+                (w, w', ty)
+            | CMore (w1', w2') as ty -> (w1', w2', ty))
+      in
+      update_watched_literals w1' w2';
+      ty
 
   let propagate clauses assign decide =
     let clause_array, watched_clauses = clauses in
