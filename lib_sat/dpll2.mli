@@ -1,1 +1,1 @@
-val solve : ?debug:bool -> Cnf.t -> Cnf.result
+val solve : ?debug:bool -> ?watched_literal:bool -> Cnf.t -> Cnf.result
