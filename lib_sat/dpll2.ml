@@ -12,7 +12,7 @@ end = struct
   (* w1 * w2 * literal array *)
   type clause = int * int * Lit.t array
   type watched_clauses = int list array
-  type t = clause array ref * watched_clauses
+  type t = { clause_array : clause array ref; watched_clauses : watched_clauses }
   type propagate_result = Sat | Conflict | Continue
 
   type clause_type =
@@ -21,41 +21,46 @@ end = struct
     | CUnit of int
     | CMore of int * int
 
-  let create nvars =
-    let watched = Array.make (nvars + 1) [] in
-    (ref [||], watched)
+  let create (nvars : int) : t =
+    let clause_array = ref [||] in
+    let watched_clauses = Array.make (nvars + 1) [] in
+    { clause_array; watched_clauses }
+  
+  let watch_clause (clauses : t) (var : int) (clause_index : int) :
+      unit =
+    let wcs = clauses.watched_clauses in 
+    wcs.(var) <- clause_index :: wcs.(var)
 
-  let watch_clause (_, watched_clauses) v i =
-    watched_clauses.(v) <- i :: watched_clauses.(v)
-
-  let add_clause clauses literals =
-    let clause_array, _ = clauses in
+  let add_clause (clauses : t) (literals : Lit.t array) : unit =
     let literals = Array.map Fun.id literals in
     Array.sort compare literals;
     let clause = (0, 0, literals) in
-    let i = Array.length !clause_array in
-    clause_array := Array.append !clause_array [| clause |];
+    let ca = clauses.clause_array in
+    let i = Array.length !ca in
+    ca := Array.append !ca [| clause |];
     watch_clause clauses 0 i
 
-  let clause_step clauses assign i cause_var =
-    let clauses_array, _ = clauses in
-    let w1, w2, lits = !clauses_array.(i) in
+  let clause_step (clauses : t) (assign : Assign.t) (clause_index : int)
+      (cause_var : int) : clause_type =
+    let ci = clause_index in
+    let ca = clauses.clause_array in
+    let w1, w2, lits = !ca.(ci) in
     assert ((w2 = 0 && w1 = w2) || w1 < w2);
     let update_watched_literals w1' w2' =
       assert (w1' <> w2');
       let w1', w2' = if w1' < w2' then (w1', w2') else (w2', w1') in
       let first_update = w1 = w2 in
       if (w1 = w1' || w1 = w2') && cause_var = Lit.var @@ lits.(w1) then
-        watch_clause clauses cause_var i;
+        watch_clause clauses cause_var ci;
       if (w2 = w1' || w2 = w2') && cause_var = Lit.var @@ lits.(w2) then
-        watch_clause clauses cause_var i;
+        watch_clause clauses cause_var ci;
       if first_update || (w1' <> w1 && w1' <> w2) then
-        watch_clause clauses (Lit.var @@ lits.(w1')) i;
+        watch_clause clauses (Lit.var @@ lits.(w1')) ci;
       if first_update || (w2' <> w1 && w2' <> w2) then
-        watch_clause clauses (Lit.var @@ lits.(w2')) i;
-      !clauses_array.(i) <- (w1', w2', lits)
+        watch_clause clauses (Lit.var @@ lits.(w2')) ci;
+      !ca.(ci) <- (w1', w2', lits)
     in
-    let watch_unbound () = watch_clause clauses 0 i in
+    let watch_unbound () = watch_clause clauses 0 ci in
 
     if w1 = w2 then
       let uas, ty =
@@ -156,16 +161,17 @@ end = struct
       update_watched_literals w1' w2';
       ty
 
-  let propagate clauses assign decide =
-    let clause_array, watched_clauses = clauses in
+  let propagate (clauses : t) (assign : Assign.t) (decide : Lit.t option) :
+      propagate_result =
     decide |> Option.iter (fun l -> Assign.assign assign l);
     let vars = 0 :: Option.(decide |> map Lit.var |> to_list) in
     let rec loop vars =
       match vars with
       | [] -> Continue
       | v :: vars -> (
-          let cls = watched_clauses.(v) in
-          watched_clauses.(v) <- [];
+          let wcs = clauses.watched_clauses in
+          let cls = wcs.(v) in
+          wcs.(v) <- [];
           let rec aux vars cls =
             match cls with
             | [] -> (vars, true)
@@ -173,11 +179,11 @@ end = struct
                 match clause_step clauses assign i v with
                 | CSat _ | CMore _ -> aux vars cls
                 | CConflict ->
-                    watched_clauses.(v) <-
-                      List.rev_append cls watched_clauses.(v);
+                    wcs.(v) <-
+                      List.rev_append cls wcs.(v);
                     (vars, false)
                 | CUnit j ->
-                    let _, _, lits = !clause_array.(i) in
+                    let _, _, lits = !(clauses.clause_array).(i) in
                     let l = lits.(j) in
                     Assign.assign assign l;
                     let v' = Lit.var l in
@@ -189,10 +195,10 @@ end = struct
     in
     loop vars
 
-  let rec full_propagate clauses assign =
-    let clause_array, _ = clauses in
+  let rec full_propagate (clauses : t) (assign : Assign.t) : propagate_result =
+    let ca = clauses.clause_array in
     let check_type i =
-      let _, _, lits = !clause_array.(i) in
+      let _, _, lits = !ca.(i) in
       let len = Array.length lits in
       let rec loop ua j =
         if j = len then match ua with None -> CConflict | Some j -> CUnit j
@@ -205,7 +211,7 @@ end = struct
       in
       loop None 0
     in
-    let nclauses = Array.length !clause_array in
+    let nclauses = Array.length !ca in
     let rec loop has_ua new_assign i =
       if i = nclauses then
         match (has_ua, new_assign) with
@@ -218,14 +224,15 @@ end = struct
         | CSat _ -> loop has_ua new_assign (i + 1)
         | CMore _ -> loop true new_assign (i + 1)
         | CUnit j ->
-            let _, _, lits = !clause_array.(i) in
+            let _, _, lits = !ca.(i) in
             Assign.assign assign lits.(j);
             loop has_ua true (i + 1)
     in
     loop false false 0
 end
 
-let solve ?(debug = false) ?(watched_literal = true) cnf =
+let solve ?(debug = false) ?(watched_literal = true) (cnf : Cnf.t) : Cnf.result
+    =
   let nvars =
     List.fold_left
       (fun acc c ->
