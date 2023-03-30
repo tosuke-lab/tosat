@@ -60,3 +60,12 @@ let set_level (assign : t) (lev : int) : unit =
          if a.(i) > th then a.(i) <- 2
        done);
   assign.level := lev lsl 2
+
+let set_edit_level (assign : t) (lev : int) : unit =
+  (if lev < current_level assign then
+     let a = assign.a in
+     let th = (lev lsl 2) lor 3 in
+     for i = 1 to Array.length a - 1 do
+       if a.(i) > th then a.(i) <- 2
+     done);
+  assign.level := lev lsl 2

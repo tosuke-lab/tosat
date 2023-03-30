@@ -10,3 +10,4 @@ val xor : t -> Lit.t -> value
 val to_list : t -> int list
 val assign : t -> Lit.t -> unit
 val set_level : t -> int -> unit
+val set_edit_level : t -> int -> unit

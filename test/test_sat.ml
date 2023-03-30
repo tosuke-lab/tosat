@@ -74,10 +74,15 @@ let[@warning "-32"] file_cases =
 let dpll_test = ("DPLL", simple_cases Dpll.solve)
 
 let dpll2_test =
-  let solve = Dpll2.solve ~debug:true in
+  let solve = Dpll2.dpll_solve ~debug:true in
   let file_cases = file_cases solve in
   ("DPLL2", simple_cases solve @ file_cases)
 
+let cdcl_test =
+  let solve = Dpll2.cdcl_solve ~debug:true in
+  let file_cases = file_cases solve in
+  ("CDCL", simple_cases solve @ file_cases)
+
 let () =
   let open Alcotest in
-  run "Sat" [ dpll_test; dpll2_test ]
+  run "Sat" [ dpll_test; dpll2_test; cdcl_test ]

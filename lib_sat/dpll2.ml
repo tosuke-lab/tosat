@@ -1,19 +1,47 @@
-(* fast DPLL implementation *)
+(* fast DPLL/CDCL implementation *)
 
 module Clauses : sig
   type t
-  type propagate_result = Sat | Conflict | Continue
+
+  type trail =
+    | TDecide of Lit.t
+    | TImply of Lit.t * Lit.t array
+    | TConflict of Lit.t array
+
+  type propagate_result =
+    | Sat
+    | Conflict of trail list
+    | Continue of trail list
 
   val create : int -> t
   val add_clause : t -> Lit.t array -> unit
-  val propagate : t -> Assign.t -> Lit.t option -> propagate_result
-  val full_propagate : t -> Assign.t -> propagate_result
+
+  val propagate :
+    ?debug:bool -> t -> Assign.t -> Lit.t option -> propagate_result
+
+  val full_propagate :
+    ?debug:bool -> t -> Assign.t -> Lit.t option -> propagate_result
+
+  val print_trail : trail list -> unit [@@warning "-32"]
 end = struct
   (* w1 * w2 * literal array *)
   type clause = int * int * Lit.t array
   type watched_clauses = int list array
-  type t = { clause_array : clause array ref; watched_clauses : watched_clauses }
-  type propagate_result = Sat | Conflict | Continue
+
+  type t = {
+    clause_array : clause array ref;
+    watched_clauses : watched_clauses;
+  }
+
+  type trail =
+    | TDecide of Lit.t
+    | TImply of Lit.t * Lit.t array
+    | TConflict of Lit.t array
+
+  type propagate_result =
+    | Sat
+    | Conflict of trail list
+    | Continue of trail list
 
   type clause_type =
     | CSat of int
@@ -21,14 +49,36 @@ end = struct
     | CUnit of int
     | CMore of int * int
 
+  let print_trail (trail : trail list) : unit =
+    let rec aux trail =
+      match trail with
+      | [] -> ()
+      | TDecide l :: trail ->
+          Printf.eprintf "decide: %d\n" (Lit.to_int l);
+          aux trail
+      | TImply (l, lits) :: trail ->
+          Printf.eprintf " imply: (%s) -> %d\n"
+            (lits |> Array.to_list
+            |> List.map (fun l -> l |> Lit.to_int |> string_of_int)
+            |> String.concat ",")
+            (Lit.to_int l);
+          aux trail
+      | TConflict lits :: trail ->
+          Printf.eprintf " conflict: (%s)\n"
+            (lits |> Array.to_list
+            |> List.map (fun l -> l |> Lit.to_int |> string_of_int)
+            |> String.concat ", ");
+          aux trail
+    in
+    aux (List.rev trail)
+
   let create (nvars : int) : t =
     let clause_array = ref [||] in
     let watched_clauses = Array.make (nvars + 1) [] in
     { clause_array; watched_clauses }
-  
-  let watch_clause (clauses : t) (var : int) (clause_index : int) :
-      unit =
-    let wcs = clauses.watched_clauses in 
+
+  let watch_clause (clauses : t) (var : int) (clause_index : int) : unit =
+    let wcs = clauses.watched_clauses in
     wcs.(var) <- clause_index :: wcs.(var)
 
   let add_clause (clauses : t) (literals : Lit.t array) : unit =
@@ -161,42 +211,89 @@ end = struct
       update_watched_literals w1' w2';
       ty
 
-  let propagate (clauses : t) (assign : Assign.t) (decide : Lit.t option) :
-      propagate_result =
-    decide |> Option.iter (fun l -> Assign.assign assign l);
-    let vars = 0 :: Option.(decide |> map Lit.var |> to_list) in
-    let rec loop vars =
-      match vars with
-      | [] -> Continue
-      | v :: vars -> (
-          let wcs = clauses.watched_clauses in
-          let cls = wcs.(v) in
-          wcs.(v) <- [];
-          let rec aux vars cls =
-            match cls with
-            | [] -> (vars, true)
-            | i :: cls -> (
-                match clause_step clauses assign i v with
-                | CSat _ | CMore _ -> aux vars cls
-                | CConflict ->
-                    wcs.(v) <-
-                      List.rev_append cls wcs.(v);
-                    (vars, false)
-                | CUnit j ->
-                    let _, _, lits = !(clauses.clause_array).(i) in
-                    let l = lits.(j) in
-                    Assign.assign assign l;
-                    let v' = Lit.var l in
-                    aux (v' :: vars) cls)
-          in
-          match aux vars cls with
-          | vars, true -> loop vars
-          | _, false -> Conflict)
+  let assert_continue (clauses : t) (assign : Assign.t) (trail : trail list) :
+      unit =
+    let string_of_assign =
+      lazy (Assign.to_list assign |> List.map string_of_int |> String.concat ",")
     in
-    loop vars
+    !(clauses.clause_array)
+    |> Array.iter (fun (_, _, lits) ->
+           let string_of_lits =
+             lazy
+               (lits |> Array.to_list
+               |> List.map (fun l -> l |> Lit.to_int |> string_of_int)
+               |> String.concat ",")
+           in
+           let rec check_type ua i =
+             if i = Array.length lits then (
+               match ua with
+               | Some l ->
+                   (* unit clause *)
+                   print_trail trail;
+                   Printf.eprintf "unit clause: (%s) -> %d\n assign: %s\n"
+                     (Lazy.force string_of_lits)
+                     (Lit.to_int l)
+                     (Lazy.force string_of_assign);
+                   assert false
+               | None ->
+                   (* conflict clause *)
+                   print_trail trail;
+                   Printf.eprintf "conflict clause: (%s)\n assign: %s\n"
+                     (Lazy.force string_of_lits)
+                     (Lazy.force string_of_assign);
+                   assert false)
+             else
+               let l = lits.(i) in
+               match (Assign.xor assign l, ua) with
+               | Assign.Unknown, None -> check_type (Some l) (i + 1)
+               | Assign.Unknown, Some _ -> (* CMore *) ()
+               | Assign.True, _ -> check_type ua (i + 1)
+               | Assign.False, _ -> (* CSat *) ()
+           in
+           check_type None 0)
 
-  let rec full_propagate (clauses : t) (assign : Assign.t) : propagate_result =
+  let propagate ?(debug = false) (clauses : t) (assign : Assign.t)
+      (decision : Lit.t option) : propagate_result =
+    decision |> Option.iter (fun l -> Assign.assign assign l);
+    let trail = Option.(decision |> map (fun l -> TDecide l) |> to_list) in
+    let vars = 0 :: Option.(decision |> map Lit.var |> to_list) in
+    let rec loop_vars trail vars =
+      match vars with
+      | [] ->
+          if debug then assert_continue clauses assign trail;
+          Continue trail
+      | v :: vars ->
+          let wcs = clauses.watched_clauses in
+          let cs = wcs.(v) in
+          wcs.(v) <- [];
+          loop_cs trail v vars cs
+    and loop_cs trail v vars cs =
+      let wcs = clauses.watched_clauses in
+      match cs with
+      | [] -> loop_vars trail vars
+      | i :: cs -> (
+          match clause_step clauses assign i v with
+          | CSat _ | CMore _ -> loop_cs trail v vars cs
+          | CConflict ->
+              let _, _, lits = !(clauses.clause_array).(i) in
+              let trail = TConflict lits :: trail in
+              wcs.(v) <- List.rev_append cs wcs.(v);
+              Conflict trail
+          | CUnit j ->
+              let _, _, lits = !(clauses.clause_array).(i) in
+              let l = lits.(j) in
+              let trail = TImply (l, lits) :: trail in
+              Assign.assign assign l;
+              let v' = Lit.var l in
+              loop_cs trail v (v' :: vars) cs)
+    in
+    loop_vars trail vars
+
+  let rec full_propagate ?(debug = false) (clauses : t) (assign : Assign.t)
+      (decision : Lit.t option) : propagate_result =
     let ca = clauses.clause_array in
+    decision |> Option.iter (Assign.assign assign);
+    let trail = Option.(decision |> map (fun l -> TDecide l) |> to_list) in
     let check_type i =
       let _, _, lits = !ca.(i) in
       let len = Array.length lits in
@@ -212,27 +309,132 @@ end = struct
       loop None 0
     in
     let nclauses = Array.length !ca in
-    let rec loop has_ua new_assign i =
+    let rec loop trail has_ua new_assign i =
       if i = nclauses then
         match (has_ua, new_assign) with
-        | true, true -> full_propagate clauses assign
-        | true, false -> Continue
+        | true, true -> full_propagate clauses assign None
+        | true, false ->
+            if debug then assert_continue clauses assign trail;
+            Continue trail
         | false, _ -> Sat
       else
         match check_type i with
-        | CConflict -> Conflict
-        | CSat _ -> loop has_ua new_assign (i + 1)
-        | CMore _ -> loop true new_assign (i + 1)
+        | CConflict ->
+            let _, _, lits = !ca.(i) in
+            let trail = TConflict lits :: trail in
+            Conflict trail
+        | CSat _ -> loop trail has_ua new_assign (i + 1)
+        | CMore _ -> loop trail true new_assign (i + 1)
         | CUnit j ->
             let _, _, lits = !ca.(i) in
-            Assign.assign assign lits.(j);
-            loop has_ua true (i + 1)
+            let l = lits.(j) in
+            Assign.assign assign l;
+            let trail = TImply (l, lits) :: trail in
+            loop trail has_ua true (i + 1)
     in
-    loop false false 0
+    loop trail false false 0
 end
 
-let solve ?(debug = false) ?(watched_literal = true) (cnf : Cnf.t) : Cnf.result
-    =
+let[@warning "-32"] print_trail trail =
+  let rec aux trail =
+    match trail with
+    | [] -> ()
+    | Clauses.TDecide l :: trail ->
+        Printf.printf "decide: %d\n" (Lit.to_int l);
+        aux trail
+    | Clauses.TImply (l, lits) :: trail ->
+        Printf.printf " imply: (%s) -> %d\n"
+          (lits |> Array.to_list
+          |> List.map (fun l -> l |> Lit.to_int |> string_of_int)
+          |> String.concat ",")
+          (Lit.to_int l);
+        aux trail
+    | Clauses.TConflict lits :: trail ->
+        Printf.printf " conflict: (%s)\n"
+          (lits |> Array.to_list
+          |> List.map (fun l -> l |> Lit.to_int |> string_of_int)
+          |> String.concat ", ");
+        aux trail
+  in
+  aux (List.rev trail)
+
+let[@warning "-32"] first_uip_cut (assign : Assign.t)
+    (trail : Clauses.trail list) : int * Lit.t array =
+  let module S = Set.Make (struct
+    type t = int
+
+    let compare = compare
+  end) in
+  match trail with
+  | Clauses.TConflict conflict_clause :: _ as trail ->
+      let dlevel =
+        conflict_clause
+        |> Array.fold_left
+             (fun acc l -> max acc (Assign.level assign @@ Lit.var l))
+             0
+      in
+      (* cut = S.union ocut icut *)
+      let ocut, icut = (S.empty, S.empty) in
+      let rec aux ocut icut trail =
+        match trail with
+        | [] -> failwith "first_uip_cut: no UIP found"
+        | Clauses.TConflict lits :: trail -> (
+            let ocut, icut =
+              lits
+              |> ((ocut, icut)
+                 |> Array.fold_left (fun (ocut, icut) l ->
+                        let v = Lit.var l in
+                        let level = Assign.level assign v in
+                        if level = dlevel then (ocut, icut |> S.add v)
+                        else (ocut |> S.add v, icut)))
+            in
+            match S.cardinal icut with
+            | 0 | 1 -> S.union ocut icut
+            | _ -> aux ocut icut trail)
+        | Clauses.TImply (l, lits) :: trail when S.mem (Lit.var l) icut -> (
+            let ocut, icut =
+              lits
+              |> ((ocut, icut)
+                 |> Array.fold_left (fun (ocut, icut) l' ->
+                        if l = l' then (ocut, icut)
+                        else
+                          let v = Lit.var l' in
+                          let level = Assign.level assign v in
+                          if level = dlevel then (ocut, icut |> S.add v)
+                          else (ocut |> S.add v, icut)))
+            in
+            let icut = icut |> S.remove (Lit.var l) in
+            match S.cardinal icut with
+            | 0 | 1 -> S.union ocut icut
+            | _ -> aux ocut icut trail)
+        | Clauses.TImply (_, _) :: trail -> aux ocut icut trail
+        | Clauses.TDecide _ :: trail ->
+            assert (List.length trail = 0);
+            S.union ocut icut
+      in
+      let cut = aux ocut icut trail |> S.elements in
+      let learnt_clause =
+        cut
+        |> List.map (fun v ->
+               match Assign.value assign v with
+               | Assign.True -> Lit.make v |> Lit.neg
+               | Assign.False -> Lit.make v
+               | Assign.Unknown -> failwith "first_uip_cut: unknown value")
+        |> Array.of_list
+      in
+      let blevel =
+        cut
+        |> List.fold_left
+             (fun acc v ->
+               let level = Assign.level assign v in
+               if level = dlevel then acc else max acc level)
+             0
+      in
+      (blevel, learnt_clause)
+  | _ -> failwith "first_uip_cut: no conflict clause"
+
+let dpll_solve ?(debug = false) ?(watched_literal = true) (cnf : Cnf.t) :
+    Cnf.result =
   let nvars =
     List.fold_left
       (fun acc c ->
@@ -265,49 +467,74 @@ let solve ?(debug = false) ?(watched_literal = true) (cnf : Cnf.t) : Cnf.result
   and propagate level lit =
     Assign.set_level assign level;
     let result =
-      if watched_literal then Clauses.propagate clauses assign (Some lit)
-      else (
-        Assign.assign assign lit;
-        Clauses.full_propagate clauses assign)
+      if watched_literal then Clauses.propagate ~debug clauses assign (Some lit)
+      else Clauses.full_propagate ~debug clauses assign (Some lit)
     in
     match result with
     | Clauses.Sat -> Cnf.SAT (Assign.to_list assign)
-    | Clauses.Conflict -> Cnf.UNSAT
-    | Clauses.Continue ->
-        (if debug then
-           cnf
-           |> List.iteri @@ fun i lits ->
-              let string_of_assign () =
-                Assign.to_list assign |> List.map string_of_int
-                |> String.concat ","
-              in
-              let string_of_lits () =
-                lits |> List.map string_of_int |> String.concat ","
-              in
-              let rec check_type ua lits =
-                match (lits, ua) with
-                | [], Some l ->
-                    (* unit clause *)
-                    Printf.eprintf "unit: (%d; %s) -> %d\n assign:%s\n" i
-                      (string_of_lits ()) l (string_of_assign ());
-
-                    assert false
-                | [], None ->
-                    (* conflict clause *)
-                    Printf.eprintf "conflict: (%d; %s)\n assign:%s\n" i
-                      (string_of_lits ()) (string_of_assign ());
-                    assert false
-                | l :: lits, ua -> (
-                    match (Assign.value assign (abs l), l > 0, ua) with
-                    | Assign.Unknown, _, None -> check_type (Some l) lits
-                    | Assign.Unknown, _, Some _ ->
-                        (* multiple unassigned literals *) ()
-                    | Assign.True, true, _ | Assign.False, false, _ ->
-                        (* satisfied *) ()
-                    | Assign.True, false, _ | Assign.False, true, _ ->
-                        check_type ua lits)
-              in
-              check_type None lits);
-        select (level + 1)
+    | Clauses.Conflict _ -> Cnf.UNSAT
+    | Clauses.Continue _ -> select (level + 1)
   in
   select 1
+
+let cdcl_solve ?(debug = false) ?(watched_literal = true) (cnf : Cnf.t) :
+    Cnf.result =
+  let nvars =
+    List.fold_left
+      (fun acc c ->
+        max acc (List.fold_left (fun acc lit -> max acc (abs lit)) 0 c))
+      0 cnf
+  in
+  let clauses =
+    let cl = Clauses.create nvars in
+    List.iter
+      (fun c ->
+        let clause = Array.of_list (List.map Lit.make c) in
+        Clauses.add_clause cl clause)
+      cnf;
+    cl
+  in
+  let assign = Assign.create nvars in
+  let score = Fun.const 0 in
+  let propagate =
+    if watched_literal then fun d -> Clauses.propagate ~debug clauses assign d
+    else fun d -> Clauses.full_propagate ~debug clauses assign d
+  in
+  let _ = (debug, watched_literal, clauses, assign, score) in
+  let rec decide trails level =
+    Assign.set_edit_level assign level;
+    match Assign.unassigned assign score with
+    | None ->
+        let assign = Assign.to_list assign in
+        if Cnf.assign_is_valid cnf assign then Cnf.SAT assign else Cnf.UNSAT
+    | Some v -> (
+        let l = Lit.make v |> Lit.neg in
+        match propagate (Some l) with
+        | Clauses.Sat -> Cnf.SAT (Assign.to_list assign)
+        | Clauses.Continue trail -> decide ((level, trail) :: trails) (level + 1)
+        | Clauses.Conflict trail ->
+            let blevel, learnt_clause = first_uip_cut assign trail in
+            Clauses.add_clause clauses learnt_clause;
+            backjump trails blevel)
+  and backjump trails level =
+    Assign.set_edit_level assign level;
+    let trail, rest_trails =
+      let rec aux = function
+        | [] -> ([], [])
+        | (l, trail) :: rest when l = level -> (trail, rest)
+        | (l, _) :: _ as rest when l < level -> ([], rest)
+        | _ :: rest -> aux rest
+      in
+      aux trails
+    in
+    match propagate None with
+    | Clauses.Sat -> Cnf.SAT (Assign.to_list assign)
+    | Clauses.Continue trail' ->
+        decide ((level, trail' @ trail) :: rest_trails) (level + 1)
+    | Clauses.Conflict trail' ->
+        let trail = trail' @ trail in
+        let blevel, learnt_clause = first_uip_cut assign trail in
+        Clauses.add_clause clauses learnt_clause;
+        backjump rest_trails blevel
+  in
+  decide [] 1
