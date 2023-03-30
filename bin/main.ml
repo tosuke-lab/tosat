@@ -14,9 +14,9 @@ let parse_backend = function
 let solver = function
   | MINISAT -> minisat_solver
   | DPLL -> dpll_solver
-  | DPLL2 -> Sat.Dpll2.dpll_solve ~debug:false ~watched_literal:true
-  | DPLL2minusWL -> Sat.Dpll2.dpll_solve ~debug:false ~watched_literal:false
-  | CDCL -> Sat.Dpll2.cdcl_solve ~debug:false ~watched_literal:true
+  | DPLL2 -> Sat.Solver.dpll_solve ~debug:false ~watched_literal:true
+  | DPLL2minusWL -> Sat.Solver.dpll_solve ~debug:false ~watched_literal:false
+  | CDCL -> Sat.Solver.cdcl_solve ~debug:false ~watched_literal:true
 
 let print_result = function
   | Sat.Cnf.SAT assign ->
