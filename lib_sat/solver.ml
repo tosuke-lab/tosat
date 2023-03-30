@@ -335,30 +335,7 @@ end = struct
     loop trail false false 0
 end
 
-let[@warning "-32"] print_trail trail =
-  let rec aux trail =
-    match trail with
-    | [] -> ()
-    | Clauses.TDecide l :: trail ->
-        Printf.printf "decide: %d\n" (Lit.to_int l);
-        aux trail
-    | Clauses.TImply (l, lits) :: trail ->
-        Printf.printf " imply: (%s) -> %d\n"
-          (lits |> Array.to_list
-          |> List.map (fun l -> l |> Lit.to_int |> string_of_int)
-          |> String.concat ",")
-          (Lit.to_int l);
-        aux trail
-    | Clauses.TConflict lits :: trail ->
-        Printf.printf " conflict: (%s)\n"
-          (lits |> Array.to_list
-          |> List.map (fun l -> l |> Lit.to_int |> string_of_int)
-          |> String.concat ", ");
-        aux trail
-  in
-  aux (List.rev trail)
-
-let[@warning "-32"] first_uip_cut (assign : Assign.t)
+let first_uip_cut (assign : Assign.t)
     (trail : Clauses.trail list) : int * Lit.t array =
   let module S = Set.Make (struct
     type t = int
