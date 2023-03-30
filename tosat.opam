@@ -11,11 +11,11 @@ doc: "https://url/to/documentation"
 bug-reports: "https://github.com/username/reponame/issues"
 depends: [
   "dune" {>= "3.7"}
-  "ocaml"
-  "menhir"
-  "minisat"
-  "alcotest" {with-test}
-  "fpath" {with-test}
+  "ocaml" {>= "5.0.0"}
+  "menhir" {>= "20220210"}
+  "minisat" {= "0.4"}
+  "alcotest" {with-test & >= "1.7.0"}
+  "fpath" {>= "0.7.3"}
   "ocamlformat" {with-dev-setup}
   "ocaml-lsp-server" {with-dev-setup}
   "utop" {with-dev-setup}

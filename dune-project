@@ -23,11 +23,11 @@
  (description "A longer description")
  (depends
   dune
-  ocaml
-  menhir
-  minisat
-  (alcotest :with-test)
-  (fpath :with-test)
+  (ocaml (>= 5.0.0))
+  (menhir (>= 20220210))
+  (minisat (= 0.4))
+  (alcotest (and :with-test (>= 1.7.0)))
+  (fpath (>= 0.7.3))
   (ocamlformat :with-dev-setup)
   (ocaml-lsp-server :with-dev-setup)
   (utop :with-dev-setup))
