@@ -1,25 +1,26 @@
-type t = int ref * int array (* level * assign *)
+type t = { level : int ref; a : int array }
 type value = True | False | Unknown
 
-let create nvars =
+let create (nvars : int) : t =
   let level = ref 4 in
   (* level 1 *)
   let assign = Array.make (nvars + 1) 2 in
   (* level 0 unknown*)
-  (level, assign)
+  { level; a = assign }
 
-let nvars (_, a) = Array.length a - 1
+let nvars (assign : t) : int = Array.length assign.a - 1
 
-let value (_, a) var =
-  match a.(var) land 3 with 1 -> True | 0 -> False | _ -> Unknown
+let value (assign : t) (var : int) : value =
+  match assign.a.(var) land 3 with 1 -> True | 0 -> False | _ -> Unknown
 
-let xor (_, a) lit =
-  let sign = a.(Lit.var lit) land 3 lxor if Lit.sign lit then 1 else 0 in
+let xor (assign : t) (lit : Lit.t) : value =
+  let sign = assign.a.(Lit.var lit) land 3 lxor if Lit.sign lit then 1 else 0 in
   match sign with 1 -> True | 0 -> False | _ -> Unknown
 
-let level (level, _) = !level lsr 2
+let level (assign : t) (var : int) : int = assign.a.(var) lsr 2
+let current_level (assign : t) : int = !(assign.level) lsr 2
 
-let unassigned assign score =
+let unassigned (assign : t) (score : int -> int) : int option =
   let rec aux acc max_score v =
     if v = 0 then acc
     else if value assign v = Unknown then
@@ -30,7 +31,7 @@ let unassigned assign score =
   in
   aux None Int.min_int (nvars assign)
 
-let to_list assign =
+let to_list (assign : t) : int list =
   let nvars = nvars assign in
   let rec aux acc v =
     if v = 0 then acc
@@ -42,13 +43,13 @@ let to_list assign =
   in
   aux [] nvars
 
-let assign (level, a) l =
-  let x = !level lor if Lit.sign l then 1 else 0 in
-  a.(Lit.var l) <- x
+let assign (assign : t) (l : Lit.t) : unit =
+  let x = !(assign.level) lor if Lit.sign l then 1 else 0 in
+  assign.a.(Lit.var l) <- x
 
-let set_level assign lev =
-  (if lev <= level assign then
-     let _, a = assign in
+let set_level (assign : t) (lev : int) : unit =
+  (if lev <= current_level assign then
+     let a = assign.a in
      if lev = 0 then
        for i = 1 to Array.length a - 1 do
          a.(i) <- a.(i) land 3
@@ -58,6 +59,4 @@ let set_level assign lev =
        for i = 1 to Array.length a - 1 do
          if a.(i) > th then a.(i) <- 2
        done);
-
-  let cur_level, _ = assign in
-  cur_level := lev lsl 2
+  assign.level := lev lsl 2
