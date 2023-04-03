@@ -29,7 +29,7 @@ end = struct
   type watched_clauses = int list array
 
   type t = {
-    clause_array : clause array ref;
+    mutable clause_array : clause array;
     watched_clauses : watched_clauses;
   }
 
@@ -73,7 +73,7 @@ end = struct
     aux (List.rev trail)
 
   let create (nvars : int) : t =
-    let clause_array = ref [||] in
+    let clause_array = [||] in
     let watched_clauses = Array.make (nvars + 1) [] in
     { clause_array; watched_clauses }
 
@@ -86,15 +86,15 @@ end = struct
     Array.sort compare literals;
     let clause = (0, 0, literals) in
     let ca = clauses.clause_array in
-    let i = Array.length !ca in
-    ca := Array.append !ca [| clause |];
+    let i = Array.length ca in
+    clauses.clause_array <- Array.append ca [| clause |];
     watch_clause clauses 0 i
 
   let clause_step (clauses : t) (assign : Assign.t) (clause_index : int)
       (cause_var : int) : clause_type =
     let ci = clause_index in
     let ca = clauses.clause_array in
-    let w1, w2, lits = !ca.(ci) in
+    let w1, w2, lits = ca.(ci) in
     assert ((w2 = 0 && w1 = w2) || w1 < w2);
     let update_watched_literals w1' w2' =
       assert (w1' <> w2');
@@ -108,7 +108,7 @@ end = struct
         watch_clause clauses (Lit.var @@ lits.(w1')) ci;
       if first_update || (w2' <> w1 && w2' <> w2) then
         watch_clause clauses (Lit.var @@ lits.(w2')) ci;
-      !ca.(ci) <- (w1', w2', lits)
+      ca.(ci) <- (w1', w2', lits)
     in
     let watch_unbound () = watch_clause clauses 0 ci in
 
@@ -216,7 +216,7 @@ end = struct
     let string_of_assign =
       lazy (Assign.to_list assign |> List.map string_of_int |> String.concat ",")
     in
-    !(clauses.clause_array)
+    clauses.clause_array
     |> Array.iter (fun (_, _, lits) ->
            let string_of_lits =
              lazy
@@ -275,12 +275,12 @@ end = struct
           match clause_step clauses assign i v with
           | CSat _ | CMore _ -> loop_cs trail v vars cs
           | CConflict ->
-              let _, _, lits = !(clauses.clause_array).(i) in
+              let _, _, lits = clauses.clause_array.(i) in
               let trail = TConflict lits :: trail in
               wcs.(v) <- List.rev_append cs wcs.(v);
               Conflict trail
           | CUnit j ->
-              let _, _, lits = !(clauses.clause_array).(i) in
+              let _, _, lits = clauses.clause_array.(i) in
               let l = lits.(j) in
               let trail = TImply (l, lits) :: trail in
               Assign.assign assign l;
@@ -295,7 +295,7 @@ end = struct
     decision |> Option.iter (Assign.assign assign);
     let trail = Option.(decision |> map (fun l -> TDecide l) |> to_list) in
     let check_type i =
-      let _, _, lits = !ca.(i) in
+      let _, _, lits = ca.(i) in
       let len = Array.length lits in
       let rec loop ua j =
         if j = len then match ua with None -> CConflict | Some j -> CUnit j
@@ -308,7 +308,7 @@ end = struct
       in
       loop None 0
     in
-    let nclauses = Array.length !ca in
+    let nclauses = Array.length ca in
     let rec loop trail has_ua new_assign i =
       if i = nclauses then
         match (has_ua, new_assign) with
@@ -320,13 +320,13 @@ end = struct
       else
         match check_type i with
         | CConflict ->
-            let _, _, lits = !ca.(i) in
+            let _, _, lits = ca.(i) in
             let trail = TConflict lits :: trail in
             Conflict trail
         | CSat _ -> loop trail has_ua new_assign (i + 1)
         | CMore _ -> loop trail true new_assign (i + 1)
         | CUnit j ->
-            let _, _, lits = !ca.(i) in
+            let _, _, lits = ca.(i) in
             let l = lits.(j) in
             Assign.assign assign l;
             let trail = TImply (l, lits) :: trail in

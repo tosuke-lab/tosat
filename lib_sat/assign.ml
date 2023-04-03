@@ -1,8 +1,8 @@
-type t = { level : int ref; a : int array }
+type t = { mutable level : int; a : int array }
 type value = True | False | Unknown
 
 let create (nvars : int) : t =
-  let level = ref 4 in
+  let level = 4 in
   (* level 1 *)
   let assign = Array.make (nvars + 1) 2 in
   (* level 0 unknown*)
@@ -18,7 +18,7 @@ let xor (assign : t) (lit : Lit.t) : value =
   match sign with 1 -> True | 0 -> False | _ -> Unknown
 
 let level (assign : t) (var : int) : int = assign.a.(var) lsr 2
-let current_level (assign : t) : int = !(assign.level) lsr 2
+let current_level (assign : t) : int = assign.level lsr 2
 
 let unassigned (assign : t) (score : int -> int) : int option =
   let rec aux acc max_score v =
@@ -44,7 +44,7 @@ let to_list (assign : t) : int list =
   aux [] nvars
 
 let assign (assign : t) (l : Lit.t) : unit =
-  let x = !(assign.level) lor if Lit.sign l then 1 else 0 in
+  let x = assign.level lor if Lit.sign l then 1 else 0 in
   assign.a.(Lit.var l) <- x
 
 let set_level (assign : t) (lev : int) : unit =
@@ -59,7 +59,7 @@ let set_level (assign : t) (lev : int) : unit =
        for i = 1 to Array.length a - 1 do
          if a.(i) > th then a.(i) <- 2
        done);
-  assign.level := lev lsl 2
+  assign.level <- lev lsl 2
 
 let set_edit_level (assign : t) (lev : int) : unit =
   (if lev < current_level assign then
@@ -68,4 +68,4 @@ let set_edit_level (assign : t) (lev : int) : unit =
      for i = 1 to Array.length a - 1 do
        if a.(i) > th then a.(i) <- 2
      done);
-  assign.level := lev lsl 2
+  assign.level <- lev lsl 2
