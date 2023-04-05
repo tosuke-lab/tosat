@@ -1,0 +1,4 @@
+(executable
+ (public_name tosat_bench)
+ (name main)
+ (libraries sat dimacs eio_main mtime))

@@ -5,7 +5,7 @@ description: "A longer description"
 maintainer: ["Maintainer Name"]
 authors: ["Author Name"]
 license: "MIT"
-tags: ["sat-solver" "dpll"]
+tags: ["sat-solver" "dpll" "cdcl"]
 homepage: "https://github.com/username/reponame"
 doc: "https://url/to/documentation"
 bug-reports: "https://github.com/username/reponame/issues"
@@ -16,6 +16,7 @@ depends: [
   "minisat" {= "0.4"}
   "alcotest" {with-test & >= "1.7.0"}
   "fpath" {>= "0.7.3"}
+  "eio_main" {>= "0.8.0"}
   "ocamlformat" {with-dev-setup}
   "ocaml-lsp-server" {with-dev-setup}
   "utop" {with-dev-setup}

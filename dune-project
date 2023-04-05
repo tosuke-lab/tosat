@@ -28,10 +28,11 @@
   (minisat (= 0.4))
   (alcotest (and :with-test (>= 1.7.0)))
   (fpath (>= 0.7.3))
+  (eio_main (>= 0.8.0))
   (ocamlformat :with-dev-setup)
   (ocaml-lsp-server :with-dev-setup)
   (utop :with-dev-setup))
  (tags
-  (sat-solver dpll)))
+  (sat-solver dpll cdcl)))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project
